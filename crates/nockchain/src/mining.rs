@@ -74,10 +74,15 @@ impl FromStr for MiningKeyConfig {
 pub fn create_mining_driver(
     mining_config: Option<Vec<MiningKeyConfig>>,
     mine: bool,
+    max_concurrent_miners_config: Option<usize>,
     init_complete_tx: Option<tokio::sync::oneshot::Sender<()>>,
 ) -> IODriverFn {
     Box::new(move |mut handle| {
         Box::pin(async move {
+            let max_concurrent_miners = max_concurrent_miners_config
+                .filter(|&n| n > 0)
+                .unwrap_or(1);
+
             let Some(configs) = mining_config else {
                 enable_mining(&handle, false).await?;
 
@@ -111,15 +116,26 @@ pub fn create_mining_driver(
             if !mine {
                 return Ok(());
             }
-            let mut next_attempt: Option<NounSlab> = None;
-            let mut current_attempt: tokio::task::JoinSet<()> = tokio::task::JoinSet::new();
+
+            let mut active_mining_tasks: tokio::task::JoinSet<()> = tokio::task::JoinSet::new();
+            let mut pending_candidate: Option<NounSlab> = None;
 
             loop {
                 tokio::select! {
-                    effect_res = handle.next_effect() => {
+                    // Branch 1: Try to spawn a pending candidate if there's space
+                    _ = async {}, if pending_candidate.is_some() && active_mining_tasks.len() < max_concurrent_miners => {
+                        if let Some(candidate_slab) = pending_candidate.take() {
+                            let (cur_handle, attempt_handle) = handle.dup();
+                            handle = cur_handle;
+                            active_mining_tasks.spawn(mining_attempt(candidate_slab, attempt_handle));
+                        }
+                    }
+
+                    // Branch 2: Handle new effects (candidates)
+                    effect_res = handle.next_effect(), if pending_candidate.is_none() => {
                         let Ok(effect) = effect_res else {
-                          warn!("Error receiving effect in mining driver: {effect_res:?}");
-                        continue;
+                            warn!("Error receiving effect in mining driver: {:?}", effect_res);
+                            continue;
                         };
                         let Ok(effect_cell) = (unsafe { effect.root().as_cell() }) else {
                             drop(effect);
@@ -132,27 +148,26 @@ pub fn create_mining_driver(
                                 slab.copy_into(effect_cell.tail());
                                 slab
                             };
-                            if !current_attempt.is_empty() {
-                                next_attempt = Some(candidate_slab);
-                            } else {
+                            if active_mining_tasks.len() < max_concurrent_miners {
                                 let (cur_handle, attempt_handle) = handle.dup();
                                 handle = cur_handle;
-                                current_attempt.spawn(mining_attempt(candidate_slab, attempt_handle));
+                                active_mining_tasks.spawn(mining_attempt(candidate_slab, attempt_handle));
+                            } else {
+                                warn!("Maximum concurrent mining tasks ({}) reached. New candidate queued.", max_concurrent_miners);
+                                if pending_candidate.is_some() {
+                                    warn!("Overwriting a previously queued candidate.");
+                                }
+                                pending_candidate = Some(candidate_slab);
                             }
                         }
                     },
-                    mining_attempt_res = current_attempt.join_next(), if !current_attempt.is_empty()  => {
-                        if let Some(Err(e)) = mining_attempt_res {
-                            warn!("Error during mining attempt: {e:?}");
-                        }
-                        let Some(candidate_slab) = next_attempt else {
-                            continue;
-                        };
-                        next_attempt = None;
-                        let (cur_handle, attempt_handle) = handle.dup();
-                        handle = cur_handle;
-                        current_attempt.spawn(mining_attempt(candidate_slab, attempt_handle));
 
+                    // Branch 3: Process completed mining tasks
+                    Some(res) = active_mining_tasks.join_next(), if !active_mining_tasks.is_empty() => {
+                        if let Err(e) = res {
+                            warn!("Error during mining attempt: {:?}", e);
+                        }
+                        // If there was a pending candidate, the first branch will try to spawn it in the next iteration.
                     }
                 }
             }
