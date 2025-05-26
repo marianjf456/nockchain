@@ -9,6 +9,7 @@ use crate::jets::fext_jets::*;
 use crate::jets::mary_jets::*;
 use crate::jets::tip5_jets::*;
 use crate::jets::verifier_jets::*;
+use crate::jets::stark_jets::stark_ntt_jet;
 
 pub fn produce_prover_hot_state() -> Vec<HotEntry> {
     let mut jets: Vec<HotEntry> = Vec::new();
@@ -389,6 +390,20 @@ pub const BASE_POLY_JETS: &[HotEntry] = &[
         ],
         1,
         bp_hadamard_jet,
+    ),
+    (
+        &[
+            K_138,
+            Left(b"one"),
+            Left(b"two"),
+            Left(b"tri"),
+            Left(b"qua"),
+            Left(b"pen"),
+            Left(b"zeke"),
+            Left(b"bp-ntt"),
+        ],
+        2,
+        stark_ntt_jet,
     ),
 ];
 

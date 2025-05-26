@@ -474,9 +474,8 @@
   %+  fmul  (fpow root i)
   (~(snag fop odds) (mod i half))
 ::
-::  +bp-ntt: ntt over base field
-++  bp-ntt
-  ~/  %bp-ntt
+::  +bp-ntt-body: ntt over base field
+++  bp-ntt-body
   |=  [bp=bpoly root=belt]
   ^-  bpoly
   ~+
@@ -486,7 +485,7 @@
   ?>  =((bpow root len.bp) 1)
   ?<  =((bpow root half) 1)
   =/  odds
-    %+  bp-ntt
+    %+  bp-ntt-body
       %-  init-bpoly
       %+  murn  (range len.bp)
       |=  i=@
@@ -495,7 +494,7 @@
       `(~(snag bop bp) i)
     (bmul root root)
   =/  evens
-    %+  bp-ntt
+    %+  bp-ntt-body
       %-  init-bpoly
       %+  murn  (range len.bp)
       |=  i=@
@@ -509,6 +508,14 @@
   %+  badd  (~(snag bop evens) (mod i half))
   %+  bmul  (bpow root i)
   (~(snag bop odds) (mod i half))
+::
+::  +bp-ntt: ntt over base field
+++  bp-ntt
+  ~/  %stark-ntt
+  |=  [bp=bpoly root=belt]
+  ^-  bpoly
+  (bp-ntt-body bp root)
+
 ::
 ::  +fp-fft: Discrete Fourier Transform (DFT) with Fast Fourier Transform (FFT) algorithm
 ++  fp-fft
