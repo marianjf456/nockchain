@@ -203,6 +203,20 @@ pub const EXTENSION_FIELD_JETS: &[HotEntry] = &[
         1,
         fpow_jet,
     ),
+    (
+        &[
+            K_138,
+            Left(b"one"),
+            Left(b"two"),
+            Left(b"tri"),
+            Left(b"qua"),
+            Left(b"pen"),
+            Left(b"zeke"),
+            Left(b"fp-fft"),
+        ],
+        1,
+        fp_fft_jet,
+    ),
 ];
 
 pub const BASE_FIELD_JETS: &[HotEntry] = &[
